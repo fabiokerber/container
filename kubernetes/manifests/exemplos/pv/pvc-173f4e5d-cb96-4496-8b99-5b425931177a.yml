@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  annotations:
+    pv.kubernetes.io/provisioned-by: driver.longhorn.io
+  creationTimestamp: "2021-12-14T18:03:49Z"
+  finalizers:
+  - kubernetes.io/pv-protection
+  - external-attacher/driver-longhorn-io
+  name: pvc-173f4e5d-cb96-4496-8b99-5b425931177a
+  resourceVersion: "340946946"
+  selfLink: /api/v1/persistentvolumes/pvc-173f4e5d-cb96-4496-8b99-5b425931177a
+  uid: 2c599e6a-1519-48af-ad92-6270b164410a
+spec:
+  accessModes:
+  - ReadWriteOnce
+  capacity:
+    storage: 400Gi
+  claimRef:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: elk-master-elk-master-0
+    namespace: elk
+    resourceVersion: "222682705"
+    uid: 173f4e5d-cb96-4496-8b99-5b425931177a
+  csi:
+    driver: driver.longhorn.io
+    fsType: ext4
+    volumeAttributes:
+      numberOfReplicas: "1"
+      staleReplicaTimeout: "2880"
+      storage.kubernetes.io/csiProvisionerIdentity: 1639403834785-8081-driver.longhorn.io
+    volumeHandle: pvc-173f4e5d-cb96-4496-8b99-5b425931177a
+  persistentVolumeReclaimPolicy: Delete
+  storageClassName: longhorn-noreplication
+  volumeMode: Filesystem
+status:
+  phase: Bound

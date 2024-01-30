@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: elk-master-elk-master-2
+spec:
+  accessModes:
+  - ReadWriteOnce
+  capacity:
+    storage: 8Gi
+  claimRef:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: elk-master-elk-master-2
+    namespace: elk
+  csi:
+    driver: driver.longhorn.io
+    fsType: ext4
+    volumeHandle: pvc-2cda88c8-2d04-4c88-b276-5d6c217e7589
+  persistentVolumeReclaimPolicy: Delete
+  storageClassName: longhorn-noreplication
+  volumeMode: Filesystem
+status:
+  phase: Bound

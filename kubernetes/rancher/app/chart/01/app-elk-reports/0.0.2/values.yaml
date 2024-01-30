@@ -1,0 +1,31 @@
+indexessize:
+  image:
+    name: rancher/curlimages-curl
+    repository: harbor.bk.app.pt
+    project: docker
+    pullPolicy: IfNotPresent
+    tag: 7.73.0
+
+queryemprego:
+  image:
+    name: rancher/curlimages-curl
+    repository: harbor.bk.app.pt
+    project: docker
+    pullPolicy: IfNotPresent
+    tag: 7.73.0
+
+sendmailemprego:
+  image:
+    name: library/busybox
+    repository: harbor.bk.app.pt
+    project: docker
+    pullPolicy: IfNotPresent
+    tag: 1.36
+
+resources:
+  requests:
+    cpu: 0.5
+    memory: 64Mi
+  limits:
+    cpu: 0.7
+    memory: 96Mi

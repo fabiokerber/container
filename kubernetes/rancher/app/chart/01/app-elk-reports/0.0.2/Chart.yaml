@@ -1,0 +1,22 @@
+apiVersion: v1
+name: "elk-cronjob"
+version: "0.0.2"
+appVersion: "0.0.1"
+description: |
+  app ELK Index Size: Coleta o tamanho dos índices do ElasticSearch por área e os envia ao próprio ElasticSearch. Estes dados são exibidos na Dashboard "ELK Monitoring".
+  app ELK Query Emprego: Realiza uma query sql no índice app EMPREGO e filtra as páginas com maior tempo de resposta. Os dados coletados são enviados semanalmente ao grupo de e-mail "emprego-alertas@intra.app.pt".
+home: https://elk.bk.app.pt/s/operacoes/app/dashboards
+keywords:
+  - app
+  - dashboard
+  - report
+  - elk
+  - query
+sources:
+  - https://elk.bk.app.pt/s/operacoes/app/dashboards
+icon: https://gitlab.intra.app.pt/fabio-k-silva/operacoes-test-env/raw/master/charts/app-elk-reports/catalogIcon-app.png
+maintainers:
+  - name: aaaaaaa
+    email: aaaa@aaaaa.com
+  - name: aaaaaaa
+    email: aaaa@aaaaa.com

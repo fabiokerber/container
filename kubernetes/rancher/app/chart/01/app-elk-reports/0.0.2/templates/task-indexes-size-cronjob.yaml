@@ -1,0 +1,72 @@
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: task-indexes-size
+  labels:
+    app.kubernetes.io/name: {{ template "name" . }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote}}
+    helm.sh/chart: '{{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}'
+    docker.app.pt/environment: {{ .Values.global.environment }}
+    docker.app.pt/name: task-indexes-size
+spec:
+  schedule: "{{ .Values.indexessize.job.crontabsyntax }}"
+  {{- if eq .Values.indexessize.job.enable false }}
+  suspend: true
+  {{- end }}
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          terminationGracePeriodSeconds: 30
+          containers:
+          - name: task-indexes-size
+            image: "{{ .Values.indexessize.image.repository }}/{{ .Values.indexessize.image.project }}/{{ .Values.indexessize.image.name }}:{{ .Values.indexessize.image.tag }}"
+            env:
+            - name: ELK_USER
+              valueFrom:
+                secretKeyRef:
+                  {{- if eq .Values.global.environment "production" }}
+                  name: elastic-auth-prd
+                  {{- else if eq .Values.global.environment "staging" }}
+                  name: elastic-auth-stg
+                  {{- end }}
+                  key: username
+            - name: ELK_PASS
+              valueFrom:
+                secretKeyRef:
+                  {{- if eq .Values.global.environment "production" }}
+                  name: elastic-auth-prd
+                  {{- else if eq .Values.global.environment "staging" }}
+                  name: elastic-auth-stg
+                  {{- end }}
+                  key: password
+            - name: ELK_HOST
+              value: "{{ .Values.indexessize.elk.host }}"
+            - name: ELK_INDEX
+              value: "{{ .Values.indexessize.elk.index }}"
+            resources:
+              requests:
+                cpu: "{{ .Values.resources.requests.cpu }}"
+                memory: "{{ .Values.resources.requests.memory }}"
+              limits:
+                cpu: "{{ .Values.resources.limits.cpu }}"
+                memory: "{{ .Values.resources.limits.memory }}"
+            command:
+              - "/bin/sh"
+              - "-c"
+              - |
+                /script/indexes_size.sh
+            volumeMounts:
+            - name: script
+              mountPath: /script
+          volumes:
+          - name: script
+            configMap:
+              name: task-indexes-size-configmap
+              defaultMode: 0555
+

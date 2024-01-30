@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    pv.kubernetes.io/bind-completed: "yes"
+    pv.kubernetes.io/bound-by-controller: "yes"
+    volume.beta.kubernetes.io/storage-provisioner: driver.longhorn.io
+  creationTimestamp: "2021-12-14T18:03:44Z"
+  finalizers:
+  - kubernetes.io/pvc-protection
+  labels:
+    app: elk-master
+  name: elk-master-elk-master-1
+  namespace: elk
+  resourceVersion: "340945661"
+  selfLink: /api/v1/namespaces/elk/persistentvolumeclaims/elk-master-elk-master-1
+  uid: 9f11e972-81bd-4f10-a87e-d143233f5b07
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 400Gi
+  storageClassName: longhorn-noreplication
+  volumeMode: Filesystem
+  volumeName: pvc-9f11e972-81bd-4f10-a87e-d143233f5b07
+status:
+  accessModes:
+  - ReadWriteOnce
+  capacity:
+    storage: 400Gi
+  phase: Bound

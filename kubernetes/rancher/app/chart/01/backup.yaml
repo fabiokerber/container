@@ -1,0 +1,106 @@
+categories:
+  - ELK
+questions:
+
+# Application Settings
+- variable: global.environment
+  description: "Environment to run the job"
+  type: enum
+  label: Environment
+  required: true
+  options:
+    - production
+    - staging
+  group: "Application Settings"
+
+# Cronjob Indexes Size
+- variable: indexessize.job.crontabsyntax
+  label: "Schedule Crontab Syntax"
+  description: "Scheduled job to collect data from indexes's size and send them directly to the ELK"
+  type: string
+  required: true
+  default: "*/30 * * * *"
+  group: "Cronjob Indexes Size"
+  show_if: "global.environment=staging||global.environment=production"
+
+- variable: indexessize.job.enable
+  label: "Enabled?"
+  description: "Set True to enable Cronjob Indexes Size or False to disable it"
+  type: boolean
+  required: true
+  default: true
+  group: "Cronjob Indexes Size"
+  show_if: "global.environment=staging||global.environment=production"
+
+- variable: indexessize.elk.host
+  label: "ELK Host"
+  description: "ELK Host that will receive the reports data"
+  type: string
+  required: true
+  default: "https://elk.staging.app.pt"
+  group: "Cronjob Indexes Size"
+  show_if: "global.environment=staging"
+
+- variable: indexessize.elk.index
+  label: "Cronjob Indexes Size"
+  description: "Which ELK Index will receive the reports data"
+  type: string
+  required: true
+  default: "test-logs"
+  group: "Cronjob Indexes Size"
+  show_if: "global.environment=staging"
+
+- variable: indexessize.elk.host
+  label: "ELK Host"
+  description: "Set ELK Host that will receive the reports data"
+  type: string
+  required: true
+  default: "https://es-logs.bk.app.pt"
+  group: "Cronjob Indexes Size"
+  show_if: "global.environment=production"
+
+- variable: indexessize.elk.index
+  label: "Cronjob Indexes Size"
+  description: "Which ELK Index will receive the reports data"
+  type: string
+  required: true
+  default: "cronjob-k8s-app-operacoes-elk"
+  group: "Cronjob Indexes Size"
+  show_if: "global.environment=production"
+
+# Cronjob Query Emprego
+- variable: queryemprego.job.crontabsyntax
+  label: "Schedule Crontab Syntax"
+  description: "Scheduled job to run a SQL Query on Emprego's index to collect the data from higher Nginx Response Time, save all data retrived in a txt file and send a email with this attachment"
+  type: string
+  required: true
+  default: "0 10 * * MON"
+  group: "Cronjob Query Emprego"
+  show_if: "global.environment=staging||global.environment=production"
+
+- variable: queryemprego.job.enable
+  label: "Enabled?"
+  description: "Set True to enable Cronjob Indexes Size or False to disable it"
+  type: boolean
+  required: true
+  default: true
+  group: "Cronjob Query Emprego"
+  show_if: "global.environment=staging||global.environment=production"
+
+- variable: queryemprego.elk.host
+  label: "ELK Host"
+  description: "Set ELK Host to collect the data"
+  type: stringtrue
+  required: true
+  default: "https://es-logs.bk.app.pt"
+  group: "Cronjob Query Emprego"
+  show_if: "global.environment=production"
+
+- variable: queryemprego.elk.host
+  label: "ELK Host"
+  description: "Set ELK Host to collect the data"
+  type: string
+  required: true
+  default: "https://elk.staging.app.pt"
+  group: "Cronjob Query Emprego"
+  show_if: "global.environment=staging"

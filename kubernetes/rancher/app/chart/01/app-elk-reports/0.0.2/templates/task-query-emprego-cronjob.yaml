@@ -1,0 +1,128 @@
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: task-query-emprego
+  labels:
+    app.kubernetes.io/name: {{ template "name" . }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote}}
+    helm.sh/chart: '{{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}'
+    docker.app.pt/environment: {{ .Values.global.environment }}
+    docker.app.pt/name: task-query-emprego
+spec:
+  schedule: "{{ .Values.queryemprego.job.crontabsyntax }}"
+  {{- if eq .Values.queryemprego.job.enable false }}
+  suspend: true
+  {{- end }}
+  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          terminationGracePeriodSeconds: 30
+          initContainers:
+          - name: task-query-emprego
+            image: "{{ .Values.queryemprego.image.repository }}/{{ .Values.queryemprego.image.project }}/{{ .Values.queryemprego.image.name }}:{{ .Values.queryemprego.image.tag }}"
+            env:
+            - name: ELK_USER
+              valueFrom:
+                secretKeyRef:
+                  {{- if eq .Values.global.environment "production" }}
+                  name: elastic-auth-prd
+                  {{- else if eq .Values.global.environment "staging" }}
+                  name: elastic-auth-stg
+                  {{- end }}
+                  key: username
+            - name: ELK_PASS
+              valueFrom:
+                secretKeyRef:
+                  {{- if eq .Values.global.environment "production" }}
+                  name: elastic-auth-prd
+                  {{- else if eq .Values.global.environment "staging" }}
+                  name: elastic-auth-stg
+                  {{- end }}
+                  key: password
+            - name: ELK_HOST
+              value: "{{ .Values.queryemprego.elk.host }}"
+            resources:
+              requests:
+                cpu: "{{ .Values.resources.requests.cpu }}"
+                memory: "{{ .Values.resources.requests.memory }}"
+              limits:
+                cpu: "{{ .Values.resources.limits.cpu }}"
+                memory: "{{ .Values.resources.limits.memory }}"
+            command:
+              - "/bin/sh"
+              - "-c"
+              - |
+                cp /source/mail_body /files
+                /source/query_emprego.sh
+                bzip2 /files/emprego_nginx_responsetime.txt
+                base64 /files/emprego_nginx_responsetime.txt.bz2 > /files/file_encoded
+                sed -e "/FILE_ENCODED_CONTENT/ {" -e "r /files/file_encoded" -e "d" -e "}" -i "/files/mail_body"
+            volumeMounts:
+            - name: source
+              mountPath: /source
+            - name: files
+              mountPath: /files
+          containers:
+          - name: task-sendmail-emprego
+            image: "{{ .Values.sendmailemprego.image.repository }}/{{ .Values.sendmailemprego.image.project }}/{{ .Values.sendmailemprego.image.name }}:{{ .Values.sendmailemprego.image.tag }}"
+            env:
+            - name: ELK_USER
+              valueFrom:
+                secretKeyRef:
+                  {{- if eq .Values.global.environment "production" }}
+                  name: elastic-auth-prd
+                  {{- else if eq .Values.global.environment "staging" }}
+                  name: elastic-auth-stg
+                  {{- end }}
+                  key: username
+            - name: ELK_PASS
+              valueFrom:
+                secretKeyRef:
+                  {{- if eq .Values.global.environment "production" }}
+                  name: elastic-auth-prd
+                  {{- else if eq .Values.global.environment "staging" }}
+                  name: elastic-auth-stg
+                  {{- end }}
+                  key: password
+            - name: ELK_HOST
+              value: "{{ .Values.queryemprego.elk.host }}"
+            - name: SMTPHOST
+              value: "{{ .Values.queryemprego.smtp.relay }}"
+            - name: MAIL_TO
+              value: "{{ .Values.queryemprego.mail.to }}"
+            - name: MAIL_CC
+              value: "{{ .Values.queryemprego.mail.cc }}"
+            - name: MAIL_SUBJECT
+              value: "{{ .Values.queryemprego.mail.subject }}"
+            resources:
+              requests:
+                cpu: "{{ .Values.resources.requests.cpu }}"
+                memory: "{{ .Values.resources.requests.memory }}"
+              limits:
+                cpu: "{{ .Values.resources.limits.cpu }}"
+                memory: "{{ .Values.resources.limits.memory }}"
+            command:
+              - "/bin/sh"
+              - "-c"
+              - |
+                sed -i "s|MAIL_TO|$MAIL_TO|g" /files/mail_body
+                sed -i "s|MAIL_CC|$MAIL_CC|g" /files/mail_body
+                sed -i "s|MAIL_SUBJECT|$MAIL_SUBJECT|g" /files/mail_body
+                /bin/sendmail -tv -f no_reply@app.pt < /files/mail_body
+            volumeMounts:
+            - name: files
+              mountPath: /files
+          volumes:
+          - name: source
+            configMap:
+              name: task-query-emprego-configmap
+              defaultMode: 0555
+          - name: files
+            emptyDir:
+              sizeLimit: "256Mi"

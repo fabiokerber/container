@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: task-query-emprego-configmap
+data:
+  query_emprego.sh: |
+    curl -ku "$ELK_USER:$ELK_PASS" -H "Content-Type: application/json" "$ELK_HOST/_sql?format=txt" --data-binary '{"query" : "SELECT nginx.response.time,event.created,http.response.status_code,source.geo.country_name,source.address,url.original FROM \"filebeat-k8s-app-emprego-nginx\" WHERE event.created >= NOW() - INTERVAL 7 DAY ORDER BY nginx.response.time DESC limit 500"}' | tee >> /files/emprego_nginx_responsetime.txt
+  mail_body: |
+    From: no_reply@app.pt
+    To: MAIL_TO
+    CC: MAIL_CC
+    Subject: MAIL_SUBJECT
+    Mime-Version: 1.0
+    Content-Type: multipart/mixed; boundary="OPERACOES"
+
+    --OPERACOES
+    Content-Type: text/plain; charset="US-ASCII"
+    Content-Transfer-Encoding: 7bit
+    Content-Disposition: inline
+
+    Ola.
+    Segue anexo top 500 das URLs com maior Response Time nos ultimos 7 dias.
+    Fonte: https://elk.bk.app.pt/s/transacionais-emprego/
+
+    --OPERACOES
+    Content-type: application;
+    Content-Transfer-Encoding: base64
+    Content-Disposition: attachment; filename="emprego_nginx_responsetime.txt.bz2"
+
+    FILE_ENCODED_CONTENT
+
+    --OPERACOES--

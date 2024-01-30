@@ -1,0 +1,35 @@
+---
+  clusterName: "elk"
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "1000m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  replicas: 3
+  volumeClaimTemplate:
+    accessModes: [ "ReadWriteOnce" ]
+    storageClassName: "longhorn-noreplication"
+    resources:
+      requests:
+        storage: "10Gi"
+  extraEnvs:
+  - name: ELASTIC_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: elasticsearch-master-account
+        key: password
+  - name: ELASTIC_USERNAME
+    valueFrom:
+      secretKeyRef:
+        name: elasticsearch-master-account
+        key: username
+
+# This is just a dummy file to make sure that
+# the keystore can be mounted at the same time
+# as a custom elasticsearch.yml
+  esConfig:
+  elasticsearch.yml: |
+    xpack.security.enabled: true
+    path.data: /usr/share/elasticsearch/data
