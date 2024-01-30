@@ -1,0 +1,42 @@
+-----------
+
+FROM python:slim (imagem que já vem com o python instalado)
+WORKDIR /home/app
+COPY requirements.txt . (copia requirements.txt para o workdir)
+COPY package.json .
+RUN pip install -r requirements.txt
+RUN apt-get update &7 apt-get install -y nodejs
+RUN apt-get install -y npm
+RUN npm install
+COPY ./code .
+ENTRYPOINT [ "node server.js" ]
+
+-----------
+
+> docker container ls -s (checa tamanho container)
+> docker history <ID_imagem> (verifica as camadas de uma imagem)
+
+-----------
+
+FROM python:slim as dependency
+WORKDIR /reqs
+COPY requirements.txt /reqs
+RUN pip install -r requirements.txt
+
+FROM node:lts as packages
+WORKDIR /packages
+COPY package.json .
+RUN npm install
+
+FROM python:slim
+RUN apt-get update &7 apt-get install -y nodejs
+WORKDIR /home/app
+COPY ./code/ .
+COPY --from=dependency /usr/local/lib/python3.7/site-packages /usr/local/lib/python3.7/site-packages/ (faz a copia das paradas ja instaladas por isso reduz o tamanho da imagem final)
+COPY --from=packages /packages/node_modules /home/app/node_modules (faz a copia das paradas ja instaladas por isso reduz o tamanho da imagem final)
+ENTRYPOINT [ "node server.js" ]
+
+-----------
+
+> docker container ls -s (checa tamanho container)
+> docker history <ID_imagem> (verifica as camadas de uma imagem)

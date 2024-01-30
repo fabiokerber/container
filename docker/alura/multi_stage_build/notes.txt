@@ -1,0 +1,1 @@
+https://cursos.alura.com.br/extra/alura-mais/usando-docker-multi-stage-build-para-otimizar-a-imagem-c74

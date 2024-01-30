@@ -1,0 +1,20 @@
+1-
+Bind Mount
+    -v /pasta/local:/pasta/container
+
+2-
+Monta em /var/lib/docker.... (pode ser controlar esse volume do docker com os comandos docker volume...)
+    -v /pasta/container
+
+docker volume create my-vol (melhor maneira de administrar volumes no docker!!)
+docker volume ls
+    -v my-vol:/pasta/container
+ls /var/lib/docker/volumes
+    my-vol
+
+3- (funciona somente no linux)
+    --tmpfs /pasta/container (cria uma pasta temporaria armazenada em RAM somente em tempo de execução)
+
+RECOMENDAÇÃO DOCKER (-v "confuso")
+    --mount type=bind,source=/pasta/local,target=/pasta/container
+    --mount source=my-vol,target=/pasta/container
