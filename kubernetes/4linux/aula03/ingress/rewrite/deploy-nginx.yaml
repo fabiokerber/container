@@ -1,0 +1,68 @@
+---
+kind: Deployment
+apiVersion: extensions/v1beta1
+metadata:
+  name: nginx-deploy1
+  labels:
+    app: nginx-matriz
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-matriz
+  template:
+    metadata:
+      labels:
+        app: nginx-matriz
+    spec:
+      containers:
+      - name: nginx-deploy1
+        image: nginx
+        ports:
+        - containerPort: 80
+---
+kind: Deployment
+apiVersion: extensions/v1beta1
+metadata:
+  name: nginx-deploy2
+  labels:
+    app: nginx-filial
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-filial
+  template:
+    metadata:
+      labels:
+        app: nginx-filial
+    spec:
+      containers:
+      - name: nginx-deploy2
+        image: nginx
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service1
+spec:
+  ports:
+  - name: http
+    targetPort: 80
+    port: 80
+  selector:
+    app: nginx-matriz
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service2
+spec:
+  ports:
+  - name: http
+    targetPort: 80
+    port: 80
+  selector:
+    app: nginx-filial

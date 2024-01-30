@@ -1,0 +1,22 @@
+---
+kind: Deployment
+apiVersion: extensions/v1beta1
+metadata:
+  name: busybox
+  labels:
+    app: busybox
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: busybox
+  template:
+    metadata:
+      labels:
+        app: busybox
+    spec:
+      containers:
+      - name: busybox
+        image: registry.dexter.com.br:5000/busybox:latest
+        command: ['sh', '-c', 'echo SUCESSO && sleep 3600']
+        imagePullPolicy: Always

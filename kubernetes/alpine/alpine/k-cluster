@@ -1,0 +1,268 @@
+## setup firewall - ssh root@192.168.56.200
+cat << EOF >> /etc/hosts
+192.168.56.151  kmaster1.fks.lab  kmaster1
+192.168.56.161  kworker1.fks.lab  kworker1
+192.168.56.162  kworker2.fks.lab  kworker2
+192.168.56.163  kworker3.fks.lab  kworker3
+192.168.56.171  grafana1.fks.lab  grafana1
+192.168.56.200  firewall1.fks.lab firewall1
+EOF
+
+cat << EOF > script-1.sh
+echo net.ipv4.ip_forward=1 | tee -a /etc/sysctl.conf && sysctl -p
+echo net.ipv6.conf.all.forwarding=1 | tee -a /etc/sysctl.conf && sysctl -p
+mv /etc/apk/repositories /etc/apk/repositories.bkp
+sed '/http/ s/^#//' /etc/apk/repositories.bkp | tee /etc/apk/repositories
+apk update && apk upgrade
+EOF
+
+cat << EOF > script-2.sh
+apk add --no-cache virtualbox-guest-additions curl wget traceroute bash bash-doc htop bind-tools git coreutils util-linux iproute2 shadow tzdata bash-completion
+apk add iptables
+modprobe -v ip_tables && modprobe -v iptable_nat
+rc-update add iptables
+iptables -t nat -A POSTROUTING -s 192.168.56.0/24 -o eth1 -j MASQUERADE
+iptables -t nat -L -n -v
+/etc/init.d/iptables save
+EOF
+
+chmod +x *.sh
+sh script-1.sh
+sh script-2.sh
+
+## setup and deploy kubernetes cluster (kmaster1) - ssh root@192.168.56.151
+cat << EOF >> /etc/hosts
+192.168.56.151  kmaster1.fks.lab  kmaster1
+192.168.56.161  kworker1.fks.lab  kworker1
+192.168.56.162  kworker2.fks.lab  kworker2
+192.168.56.163  kworker3.fks.lab  kworker3
+192.168.56.171  grafana1.fks.lab  grafana1
+192.168.56.200  firewall1.fks.lab firewall1
+EOF
+
+cat << EOF > script-1.sh
+mv /etc/apk/repositories /etc/apk/repositories.bkp
+sed '/http/ s/^#//' /etc/apk/repositories.bkp | tee /etc/apk/repositories
+apk update && apk upgrade
+swapoff -a && sed -i '/swap/d' /etc/fstab
+mount --make-rshared /
+rc-update add local default
+EOF
+
+install -D -m 0755 /dev/stderr /etc/local.d/10-mount.start 2<<-EOF
+#!/bin/sh
+mount --make-rshared /
+EOF
+
+cat << EOF > script-2.sh
+apk add --no-cache virtualbox-guest-additions curl wget traceroute bash bash-doc htop bind-tools git coreutils util-linux iproute2 shadow kubectl-bash-completion tzdata bash-completion
+apk add --no-cache cni-plugins --repository=http://dl-cdn.alpinelinux.org/alpine/edge/community
+export PATH=$PATH:/usr/share/cni-plugins/bin
+echo -e '#!/bin/sh\nexport PATH=$PATH:/usr/share/cni-plugins/bin' > /etc/profile.d/cni.sh
+apk add iptables
+curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --cluster-init --token k3s-fks-lab --disable traefik --disable servicelb" sh -s -
+echo "export KUBECONFIG=$HOME/.kube/config" >> /etc/profile && . /etc/profile
+curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 > /tmp/install-helm.sh
+chmod u+x /tmp/install-helm.sh
+bash /tmp/install-helm.sh
+helm repo add stable https://charts.helm.sh/stable
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm repo update
+EOF
+
+chmod +x *.sh
+sh script-1.sh
+sh script-2.sh
+mkdir -p $HOME/.kube && cp -i /etc/rancher/k3s/k3s.yaml $HOME/.kube/config
+
+## setup and add kubernetes workers (kworkers1,2,3) - ssh root@192.168.56.{...}
+cat << EOF >> /etc/hosts
+192.168.56.151  kmaster1.fks.lab  kmaster1
+192.168.56.161  kworker1.fks.lab  kworker1
+192.168.56.162  kworker2.fks.lab  kworker2
+192.168.56.163  kworker3.fks.lab  kworker3
+192.168.56.171  grafana1.fks.lab  grafana1
+192.168.56.200  firewall1.fks.lab firewall1
+EOF
+
+cat << EOF > script-1.sh
+mv /etc/apk/repositories /etc/apk/repositories.bkp
+sed '/http/ s/^#//' /etc/apk/repositories.bkp | tee /etc/apk/repositories
+apk update && apk upgrade
+swapoff -a && sed -i '/swap/d' /etc/fstab
+mount --make-rshared /
+rc-update add local default
+EOF
+
+install -D -m 0755 /dev/stderr /etc/local.d/10-mount.start 2<<-EOF
+#!/bin/sh
+mount --make-rshared /
+EOF
+
+cat << EOF > script-2.sh
+apk add --no-cache virtualbox-guest-additions curl wget traceroute bash bash-doc htop bind-tools git coreutils util-linux iproute2 shadow kubectl-bash-completion tzdata bash-completion
+apk add --no-cache cni-plugins --repository=http://dl-cdn.alpinelinux.org/alpine/edge/community
+export PATH=$PATH:/usr/share/cni-plugins/bin
+echo -e '#!/bin/sh\nexport PATH=$PATH:/usr/share/cni-plugins/bin' > /etc/profile.d/cni.sh
+apk add iptables
+curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="agent --server https://192.168.56.151:6443 --token k3s-fks-lab" sh -s -
+EOF
+
+chmod +x *.sh
+sh script-1.sh
+sh script-2.sh
+
+## change workers rules (kmaster1) - ssh root@192.168.56.151
+cat << EOF > script-3.sh
+kubectl label node kworker1.fks.lab node-role.kubernetes.io/worker=worker
+kubectl label node kworker2.fks.lab node-role.kubernetes.io/worker=worker
+kubectl label node kworker3.fks.lab node-role.kubernetes.io/worker=worker
+EOF
+
+chmod +x script-3.sh
+sh script-3.sh
+
+## deploy kubernetes cluster (grafana1) - ssh root@192.168.56.171
+cat << EOF >> /etc/hosts
+192.168.56.151  kmaster1.fks.lab  kmaster1
+192.168.56.161  kworker1.fks.lab  kworker1
+192.168.56.162  kworker2.fks.lab  kworker2
+192.168.56.163  kworker3.fks.lab  kworker3
+192.168.56.171  grafana1.fks.lab  grafana1
+192.168.56.200  firewall1.fks.lab firewall1
+EOF
+
+cat << EOF > script-1.sh
+mv /etc/apk/repositories /etc/apk/repositories.bkp
+sed '/http/ s/^#//' /etc/apk/repositories.bkp | tee /etc/apk/repositories
+apk update && apk upgrade
+swapoff -a && sed -i '/swap/d' /etc/fstab
+mount --make-rshared /
+rc-update add local default
+EOF
+
+install -D -m 0755 /dev/stderr /etc/local.d/10-mount.start 2<<-EOF
+#!/bin/sh
+mount --make-rshared /
+EOF
+
+cat << EOF > script-2.sh
+apk add --no-cache virtualbox-guest-additions curl wget traceroute bash bash-doc htop bind-tools git coreutils util-linux iproute2 shadow kubectl-bash-completion tzdata bash-completion
+apk add --no-cache cni-plugins --repository=http://dl-cdn.alpinelinux.org/alpine/edge/community
+export PATH=$PATH:/usr/share/cni-plugins/bin
+echo -e '#!/bin/sh\nexport PATH=$PATH:/usr/share/cni-plugins/bin' > /etc/profile.d/cni.sh
+apk add iptables
+curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --cluster-init --token k3s-fks-lab --disable traefik --disable servicelb" sh -s -
+mkdir -p $HOME/.kube
+cp -i /etc/rancher/k3s/k3s.yaml $HOME/.kube/config
+echo "export KUBECONFIG=$HOME/.kube/config" >> /etc/profile && . /etc/profile
+curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 > /tmp/install-helm.sh
+chmod u+x /tmp/install-helm.sh
+bash /tmp/install-helm.sh
+helm repo add stable https://charts.helm.sh/stable
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm repo update
+EOF
+
+chmod +x *.sh
+sh script-1.sh
+sh script-2.sh
+
+## get token slack channel (#alertmanager)
+https://kerberos-co.slack.com
+
+#### k8s monitoring noob deploy
+
+## clone git repository (kmaster1)
+git clone https://github.com/fabiokerber/Kubernetes.git
+
+## deploy kube-state-metrics (kmaster1)
+kubectl apply -f Kubernetes/5.Alpine/k8s_manifests/kube-state-metrics/
+
+## deploy prometheus (kmaster1)
+kubectl create namespace monitoring
+kubectl apply -f Kubernetes/5.Alpine/k8s_manifests/prometheus/
+http://192.168.56.151:30000/
+
+## deploy alertmanager (kmaster1)
+sed -i 's|<token>|https://hooks.slack.com/services/...|g' Kubernetes/5.Alpine/k8s_manifests/alertmanager/alertmanager-config.yaml
+kubectl apply -f Kubernetes/5.Alpine/k8s_manifests/alertmanager/
+http://192.168.56.151:32500/
+
+## clone git repository (grafana)
+git clone https://github.com/fabiokerber/Kubernetes.git
+
+## deploy kube-state-metrics (grafana1)
+kubectl apply -f Kubernetes/5.Alpine/k8s_manifests/kube-state-metrics/
+
+## deploy grafana (grafana1)
+kubectl create namespace monitoring
+kubectl apply -f Kubernetes/5.Alpine/k8s_manifests/grafana/
+http://192.168.56.171:32000/login (admin | admin)
+
+#### monitor external server
+
+## node-exporter service deploy alpine (grafana1)
+apk add --no-cache prometheus-node-exporter
+rc-update add node-exporter
+rc-service node-exporter start
+ss -tunelp | grep 9100
+http://192.168.56.171:9100/metrics
+
+## node-exporter pod deploy alpine (grafana1)
+kubectl apply -f Kubernetes/5.Alpine/k8s_manifests/node-exporter-standalone/
+http://192.168.56.171:31000/
+
+## add new target to prometheus (kmaster)
+vi Kubernetes/5.Alpine/k8s_manifests/prometheus/prometheus-config.yaml
+---
+    scrape_configs:
+      - job_name: 'external-grafana1-sysservice'
+        static_configs:
+        - targets: ['192.168.56.171:9100']
+      - job_name: 'external-grafana1-k8sservice'
+        static_configs:
+        - targets: ['192.168.56.171:31000']
+---
+kubectl apply -f Kubernetes/5.Alpine/k8s_manifests/prometheus/prometheus-config.yaml
+kubectl -n monitoring rollout restart deployment.apps/prometheus-deployment
+watch kubectl get all -n monitoring
+
+#### k8s monitoring chart deploy
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+helm pull prometheus-community/prometheus --version 21.1.2 --untar
+git clone https://github.com/fabiokerber/Kubernetes.git
+kubectl create namespace monitoring
+
+#### random deploys
+
+## clone git repository (kmaster)
+git clone https://github.com/fabiokerber/Kubernetes.git
+
+## deploy postgresql (kmaster)
+kubectl create namespace database
+kubectl apply -f Kubernetes/5.Alpine/k8s_manifests/postgresql/
+kubectl exec -it <pod_name> -n database -- psql -h localhost -U admin --password -p 5432 postgresdb (test123)
+\q
+
+## connect postgresql from grafana (grafana)
+apk add --no-cache postgresql12-client
+PGPASSWORD="test123" psql --host 192.168.56.161 -U admin -d postgres -p 31500
+\q
+
+## deploy example
+kubectl create -f https://k8s.io/examples/application/deployment.yaml
+kubectl get pods -n default
+kubectl get pods -n default -o wide
+
+## deploy nginx 1
+kubectl create deployment nginx-deploy --image=nginx --replicas=4
+kubectl describe deployment nginx-deploy
+kubectl delete deployment nginx-deploy
+
+## deploy nginx 2
+helm upgrade --install ingress-nginx ingress-nginx \
+  --repo https://kubernetes.github.io/ingress-nginx \
+  --namespace ingress-nginx --create-namespace \
+  --set controller.kind=DaemonSet --set controller.service.type=NodePort --set controller.hostPort.enabled=true

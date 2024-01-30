@@ -1,0 +1,625 @@
+Vagrant.configure('2') do |config|
+
+    $script_debian = <<-SCRIPT
+        echo 'LC_ALL=en_US.utf8' >> /etc/default/locale
+        echo 'LANG=en_US.utf8' >> /etc/default/locale
+        echo 'LC_ALL=en_US.utf8' >> /etc/environment
+        echo 'LANG=en_US.utf8' >> /etc/environment
+        echo 'locales locales/default_environment_locale select en_US.UTF-8' | debconf-set-selections
+        echo 'locales locales/locales_to_be_generated multiselect en_US.UTF-8 UTF-8' | debconf-set-selections
+        rm -f /etc/locale.gen
+        dpkg-reconfigure --frontend noninteractive locales
+        echo 'let g:skip_defaults_vim = 1' >> /etc/vim/vimrc
+    SCRIPT
+
+    config.env.enable
+    config.vm.boot_timeout = 1200
+    if Vagrant.has_plugin?("vagrant-vbguest")
+        config.vbguest.auto_update = false
+    end
+    config.vm.define 'ubuntu_kind' do |ubuntu_kind|
+        ubuntu_kind.vm.box = 'ubuntu/lunar64'
+        ubuntu_kind.vm.hostname = 'kind-ubuntu'
+        ubuntu_kind.vm.network 'private_network', ip: ENV['UBUNTU_KIND_IP']
+        ubuntu_kind.vm.provision 'shell', inline: 'sudo timedatectl set-timezone $TZ', env: {"TZ" => ENV['TIMEZONE']}
+        ubuntu_kind.vm.provision 'shell', inline: '[ $(uname -m) = x86_64 ] && curl -Lo ./kind https://kind.sigs.k8s.io/dl/$KV/kind-linux-amd64', env: {"KV" => ENV['KIND_VERSION']}
+        ubuntu_kind.vm.provision 'shell', inline: <<-SHELL
+            sudo apt update
+            sudo apt install -y git bash-completion
+            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+            kubectl completion bash | sudo tee /etc/bash_completion.d/kubectl > /dev/null
+            curl -sS https://webinstall.dev/k9s | sudo bash
+            echo "alias k=kubectl" >> $HOME/.bashrc
+            echo "source /etc/profile.d/bash_completion.sh" >> $HOME/.bashrc
+            echo "source $HOME/.config/envman/PATH.env" >> $HOME/.bashrc
+            source $HOME/.bashrc
+            curl -fsSL https://get.docker.com | sudo bash
+            chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+            kind create cluster --config /vagrant/files/cluster.yaml
+            git clone https://github.com/fabiokerber/Kubernetes.git
+        SHELL
+        ubuntu_kind.vm.provider 'virtualbox' do |vb|
+            vb.memory = 4096
+            vb.cpus = 4
+            vb.name = 'kind-ubuntu'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+        end
+    end
+    config.vm.define 'alpine_kind' do |alpine_kind|
+        alpine_kind.vm.box = 'generic/alpine318'
+        alpine_kind.vm.hostname = 'kind-alpine'
+        alpine_kind.vm.network 'private_network', ip: ENV['ALPINE_KIND_IP']
+        alpine_kind.vm.provision 'shell', inline: '[ $(uname -m) = x86_64 ] && curl -Lo ./kind https://kind.sigs.k8s.io/dl/$KV/kind-linux-amd64', env: {"KV" => ENV['KIND_VERSION']}
+        alpine_kind.vm.provision 'shell', inline: <<-SHELL
+            sudo mv /etc/apk/repositories /etc/apk/repositories.bkp
+            sudo wget -O /etc/apk/repositories https://raw.githubusercontent.com/fabiokerber/Kubernetes/main/7.Descomplicando_Kubernetes/lab/files/repositories
+            sudo apk update && sudo apk upgrade
+            sudo apk add --no-cache docker openrc shadow virtualbox-guest-additions iptables curl wget traceroute bash bash-doc htop bind-tools git coreutils util-linux iproute2 shadow kubectl-bash-completion tzdata bash-completion
+            sudo rc-update add docker
+            sudo rc-service docker start
+            wget -O /tmp/mount.sh https://raw.githubusercontent.com/fabiokerber/Kubernetes/main/7.Descomplicando_Kubernetes/lab/files/mount.sh
+            chmod +x /tmp/mount.sh && sudo bash /tmp/mount.sh
+            sudo rc-update add local default
+        SHELL
+        alpine_kind.vm.provision :reload
+        alpine_kind.vm.provision 'shell', inline: <<-SHELL
+            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            sudo chown root:root kubectl && sudo chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+            curl -sS https://webinstall.dev/k9s | sudo bash
+            echo "source /etc/bash/bash_completion.sh" | sudo tee -a /root/.bashrc
+            echo "source $HOME/.config/envman/PATH.env" | sudo tee -a /root/.bashrc
+            sudo chown root:root kind && sudo chmod +x kind && sudo mv kind /usr/local/bin/
+            sudo wget -O /root/cluster.yaml https://raw.githubusercontent.com/fabiokerber/Kubernetes/main/7.Descomplicando_Kubernetes/lab/files/cluster.yaml
+            sudo kind create cluster --config /root/cluster.yaml
+            sudo mkdir -p /root/k8s
+            sudo git clone https://github.com/fabiokerber/Kubernetes.git /root/k8s
+            sudo kubectl label node kind-worker node-role.kubernetes.io/worker=worker
+            sudo kubectl label node kind-worker2 node-role.kubernetes.io/worker=worker
+            curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 > /tmp/install-helm.sh
+            chmod u+x /tmp/install-helm.sh
+            sudo bash /tmp/install-helm.sh
+            sudo helm repo add bitnami https://charts.bitnami.com/bitnami && sudo helm repo add stable https://charts.helm.sh/stable
+            sudo helm repo update
+        SHELL
+        alpine_kind.vm.provider 'virtualbox' do |vb|
+            vb.memory = 4096
+            vb.cpus = 4
+            vb.name = 'kind-alpine'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+        end
+    end
+    config.vm.define 'ubuntu_nfs' do |ubuntu_nfs|
+        ubuntu_nfs.vm.box = 'ubuntu/focal64'
+        ubuntu_nfs.vm.hostname = 'ubuntu-nfs'
+        ubuntu_nfs.vm.network 'private_network', ip: ENV['UBUNTU_NFS_IP']
+        ubuntu_nfs.vm.provision 'shell', inline: 'timedatectl set-timezone $TZ', env: {"TZ" => ENV['TIMEZONE']}
+        ubuntu_nfs.vm.provision 'shell', inline: 'echo "$IP debian-rke01" >> /etc/hosts', env: {"IP" => ENV['DEBIAN_RKE01_IP']}
+        ubuntu_nfs.vm.provision 'shell', inline: 'echo "$IP debian-rke02" >> /etc/hosts', env: {"IP" => ENV['DEBIAN_RKE02_IP']}
+        ubuntu_nfs.vm.provision 'shell', inline: 'echo "$IP debian-rke03" >> /etc/hosts', env: {"IP" => ENV['DEBIAN_RKE03_IP']}
+        ubuntu_nfs.vm.provision 'shell', inline: 'echo "$IP ubuntu-nfs" >> /etc/hosts', env: {"IP" => ENV['UBUNTU_NFS_IP']}
+        ubuntu_nfs.vm.provision 'shell', inline: <<-SHELL
+            apt update
+            apt install -y nfs-kernel-server
+            mkdir /var/nfs/general -p
+            chown nobody:nogroup /var/nfs/general
+            echo '/var/nfs/general 192.168.56.0/24(rw,sync,no_subtree_check)' >> /etc/exports
+            exportfs -ar
+        SHELL
+        ubuntu_nfs.vm.provider 'virtualbox' do |vb|
+            vb.memory = 512
+            vb.cpus = 1
+            vb.name = 'ubuntu-nfs'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+        end
+    end
+    config.vm.define 'debian_rke01' do |debian_rke01|
+        debian_rke01.vm.box = 'debian/bookworm64'
+        debian_rke01.vm.hostname = 'debian-rke01'
+        debian_rke01.vm.network 'private_network', ip: ENV['DEBIAN_RKE01_IP']
+        debian_rke01.vm.provision 'shell', inline: 'timedatectl set-timezone $TZ', env: {"TZ" => ENV['TIMEZONE']}
+        debian_rke01.vm.provision 'shell', inline: 'echo "$IP debian-rke01" >> /etc/hosts', env: {"IP" => ENV['DEBIAN_RKE01_IP']}
+        debian_rke01.vm.provision 'shell', inline: 'echo "$IP debian-rke02" >> /etc/hosts', env: {"IP" => ENV['DEBIAN_RKE02_IP']}
+        debian_rke01.vm.provision 'shell', inline: 'echo "$IP debian-rke03" >> /etc/hosts', env: {"IP" => ENV['DEBIAN_RKE03_IP']}
+        debian_rke01.vm.provision 'shell', inline: 'echo "$IP ubuntu-nfs" >> /etc/hosts', env: {"IP" => ENV['UBUNTU_NFS_IP']}
+        debian_rke01.vm.provision 'shell', inline: 'echo "$IP" >> /usr/local/src/local_ip', env: {"IP" => ENV['DEBIAN_RKE01_IP']}
+        debian_rke01.vm.provision 'shell', inline: 'echo "$REK_VER" >> /usr/local/src/rke2_version', env: {"REK_VER" => ENV['RKE2_VERSION']}
+        debian_rke01.vm.provision 'shell', inline: 'echo "$HELM_VER" >> /usr/local/src/helm_version', env: {"HELM_VER" => ENV['HELM_VERSION']}
+        debian_rke01.vm.provision 'shell', inline: $script_debian
+        debian_rke01.vm.provision 'shell', inline: <<-SHELL
+            swapoff -a && sed -i "/swap/d" /etc/fstab
+            sed -i '/127.0.1.1/d' /etc/hosts
+            echo 'net.ipv4.conf.all.forwarding=1' >> /etc/sysctl.conf
+            echo 'net.ipv6.conf.all.forwarding=1' >> /etc/sysctl.conf
+            sysctl -p
+            apt update
+            apt upgrade -y
+        SHELL
+        debian_rke01.vm.provision :reload
+        debian_rke01.vm.provision 'shell', inline: 'echo "$IP debian-rke01" >> /etc/hosts', env: {"REK_VER" => ENV['DEBIAN_RKE01_IP']}
+        debian_rke01.vm.provision 'shell', inline: <<-SHELL
+            apt install -y ca-certificates curl gnupg lsb-release nfs-common golang htop iptables default-mysql-client-core git
+            export INSTALL_RKE2_VERSION=$(cat /usr/local/src/rke2_version)
+            export INSTALL_RKE2_ARTIFACT_PATH=/usr/local/src
+            export INSTALL_RKE2_TYPE=server
+            export RKE_IP=$(cat /usr/local/src/local_ip)
+            export INSTALL_HELM_VERSION=$(cat /usr/local/src/helm_version)
+            cd /usr/local/src/
+            curl -OL https://github.com/rancher/rke2/releases/download/$INSTALL_RKE2_VERSION/rke2-images.linux-amd64.tar.zst
+            curl -OL https://github.com/rancher/rke2/releases/download/$INSTALL_RKE2_VERSION/rke2.linux-amd64.tar.gz
+            curl -OL https://github.com/rancher/rke2/releases/download/$INSTALL_RKE2_VERSION/sha256sum-amd64.txt
+            curl -sfL https://get.rke2.io --output install.sh
+            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            wget https://get.helm.sh/helm-$INSTALL_HELM_VERSION-linux-amd64.tar.gz
+            CONTROLLER_TAG=$(curl -s https://api.github.com/repos/kubernetes/ingress-nginx/releases/latest | grep tag_name | cut -d '"' -f 4)
+            wget https://github.com/kubernetes/ingress-nginx/archive/refs/tags/${CONTROLLER_TAG}.tar.gz
+            chown root:root /usr/local/src/kubectl
+            chmod +x /usr/local/src/kubectl
+            cp /usr/local/src/kubectl /usr/local/bin/
+            tar -zxvf /usr/local/src/helm-$INSTALL_HELM_VERSION-linux-amd64.tar.gz -C /usr/local/src/
+            chown root:root /usr/local/src/linux-amd64/helm
+            chmod +x /usr/local/src/linux-amd64/helm
+            cp /usr/local/src/linux-amd64/helm /usr/local/bin/
+            echo 'export KUBECONFIG=/etc/rancher/rke2/rke2.yaml' >> /root/.bashrc
+            echo 'export PATH=$PATH:/var/lib/rancher/rke2/bin:/usr/local/bin' >> /root/.bashrc
+            echo 'export CRI_CONFIG_FILE=unix:///run/k3s/containerd/containerd.sock' >> /root/.bashrc
+            echo 'export CONTAINER_RUNTIME_ENDPOINT=/run/k3s/containerd/containerd.sock' >> /root/.bashrc
+            echo 'export CONTAINERD_ADDRESS=/var/lib/rancher/rke2/agent/etc/crictl.yaml' >> /root/.bashrc
+            source /root/.bashrc
+            mkdir /etc/rancher/rke2 -p
+            cp /vagrant/files/config.yaml /etc/rancher/rke2/
+            sed -i "s|%HOSTNAME%|$(hostname -f)|g" /etc/rancher/rke2/config.yaml
+            sed -i "s|%IP%|$RKE_IP|g" /etc/rancher/rke2/config.yaml
+            cd /usr/local/src && sh install.sh
+            systemctl enable rke2-server
+            systemctl start rke2-server
+            chmod go-r /etc/rancher/rke2/rke2.yaml
+            helm repo add stable https://charts.helm.sh/stable
+            helm repo add bitnami https://charts.bitnami.com/bitnami
+            helm repo update
+            mkdir -p /vagrant/temp
+            rm -f /vagrant/temp/*
+            cat /var/lib/rancher/rke2/server/token > /vagrant/temp/token
+            mkdir -p /mnt/nfs/general
+            mount 192.168.56.200:/var/nfs/general /mnt/nfs/general
+        SHELL
+        debian_rke01.vm.provider 'virtualbox' do |vb|
+            vb.memory = 4096
+            vb.cpus = 4
+            vb.name = 'debian-rke01'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+        end
+    end
+    config.vm.define 'debian_rke02' do |debian_rke02|
+        debian_rke02.vm.box = 'debian/bookworm64'
+        debian_rke02.vm.hostname = 'debian-rke02'
+        debian_rke02.vm.network 'private_network', ip: ENV['DEBIAN_RKE02_IP']
+        debian_rke02.vm.provision 'shell', inline: 'timedatectl set-timezone $TZ', env: {"TZ" => ENV['TIMEZONE']}
+        debian_rke02.vm.provision 'shell', inline: 'echo "$IP debian-rke01" >> /etc/hosts', env: {"IP" => ENV['DEBIAN_RKE01_IP']}
+        debian_rke02.vm.provision 'shell', inline: 'echo "$IP debian-rke02" >> /etc/hosts', env: {"IP" => ENV['DEBIAN_RKE02_IP']}
+        debian_rke02.vm.provision 'shell', inline: 'echo "$IP debian-rke03" >> /etc/hosts', env: {"IP" => ENV['DEBIAN_RKE03_IP']}
+        debian_rke02.vm.provision 'shell', inline: 'echo "$IP ubuntu-nfs" >> /etc/hosts', env: {"IP" => ENV['UBUNTU_NFS_IP']}
+        debian_rke02.vm.provision 'shell', inline: 'echo "$IP" >> /usr/local/src/local_ip', env: {"IP" => ENV['DEBIAN_RKE02_IP']}
+        debian_rke02.vm.provision 'shell', inline: 'echo "$IP" >> /usr/local/src/master_ip', env: {"IP" => ENV['DEBIAN_RKE01_IP']}
+        debian_rke02.vm.provision 'shell', inline: 'echo "$REK_VER" >> /usr/local/src/rke2_version', env: {"REK_VER" => ENV['RKE2_VERSION']}
+        debian_rke02.vm.provision 'shell', inline: 'echo "$HELM_VER" >> /usr/local/src/helm_version', env: {"HELM_VER" => ENV['HELM_VERSION']}
+        debian_rke02.vm.provision 'shell', inline: $script_debian
+        debian_rke02.vm.provision 'shell', inline: <<-SHELL
+            swapoff -a && sed -i "/swap/d" /etc/fstab
+            sed -i '/127.0.1.1/d' /etc/hosts
+            echo 'net.ipv4.conf.all.forwarding=1' >> /etc/sysctl.conf
+            echo 'net.ipv6.conf.all.forwarding=1' >> /etc/sysctl.conf
+            sysctl -p
+            apt update
+            apt upgrade -y
+        SHELL
+        debian_rke02.vm.provision :reload
+        debian_rke02.vm.provision 'shell', inline: <<-SHELL
+            apt install -y ca-certificates curl gnupg lsb-release nfs-common golang htop iptables default-mysql-client-core git
+            export INSTALL_RKE2_VERSION=$(cat /usr/local/src/rke2_version)
+            export INSTALL_RKE2_ARTIFACT_PATH=/usr/local/src
+            export INSTALL_RKE2_TYPE=server
+            export RKE_IP=$(cat /usr/local/src/local_ip)
+            export MASTER_IP=$(cat /usr/local/src/master_ip)
+            export INSTALL_HELM_VERSION=$(cat /usr/local/src/helm_version)
+            export TOKEN=$(cat /vagrant/temp/token)
+            cd /usr/local/src/
+            curl -OL https://github.com/rancher/rke2/releases/download/$INSTALL_RKE2_VERSION/rke2-images.linux-amd64.tar.zst
+            curl -OL https://github.com/rancher/rke2/releases/download/$INSTALL_RKE2_VERSION/rke2.linux-amd64.tar.gz
+            curl -OL https://github.com/rancher/rke2/releases/download/$INSTALL_RKE2_VERSION/sha256sum-amd64.txt
+            curl -sfL https://get.rke2.io --output install.sh
+            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            wget https://get.helm.sh/helm-$INSTALL_HELM_VERSION-linux-amd64.tar.gz
+            CONTROLLER_TAG=$(curl -s https://api.github.com/repos/kubernetes/ingress-nginx/releases/latest | grep tag_name | cut -d '"' -f 4)
+            wget https://github.com/kubernetes/ingress-nginx/archive/refs/tags/${CONTROLLER_TAG}.tar.gz
+            chown root:root /usr/local/src/kubectl
+            chmod +x /usr/local/src/kubectl
+            cp /usr/local/src/kubectl /usr/local/bin/
+            tar -zxvf /usr/local/src/helm-$INSTALL_HELM_VERSION-linux-amd64.tar.gz -C /usr/local/src/
+            chown root:root /usr/local/src/linux-amd64/helm
+            chmod +x /usr/local/src/linux-amd64/helm
+            cp /usr/local/src/linux-amd64/helm /usr/local/bin/
+            echo 'export KUBECONFIG=/etc/rancher/rke2/rke2.yaml' >> /root/.bashrc
+            echo 'export PATH=$PATH:/var/lib/rancher/rke2/bin:/usr/local/bin' >> /root/.bashrc
+            echo 'export CRI_CONFIG_FILE=unix:///run/k3s/containerd/containerd.sock' >> /root/.bashrc
+            echo 'export CONTAINER_RUNTIME_ENDPOINT=/run/k3s/containerd/containerd.sock' >> /root/.bashrc
+            echo 'export CONTAINERD_ADDRESS=/var/lib/rancher/rke2/agent/etc/crictl.yaml' >> /root/.bashrc
+            source /root/.bashrc
+            mkdir /etc/rancher/rke2 -p
+            cp /vagrant/files/config.yaml /etc/rancher/rke2/
+            sed -i "s|%HOSTNAME%|$(hostname -f)|g" /etc/rancher/rke2/config.yaml
+            sed -i "s|%IP%|$RKE_IP|g" /etc/rancher/rke2/config.yaml
+            sed -i "s|#TOKEN|token: $TOKEN|g" /etc/rancher/rke2/config.yaml
+            sed -i "s|#MASTERIP|server: https://$MASTER_IP:9345|g" /etc/rancher/rke2/config.yaml
+            cd /usr/local/src && sh install.sh
+            systemctl enable rke2-server
+            systemctl start rke2-server
+            chmod go-r /etc/rancher/rke2/rke2.yaml
+            helm repo add stable https://charts.helm.sh/stable
+            helm repo add bitnami https://charts.bitnami.com/bitnami
+            helm repo update
+            mkdir -p /mnt/nfs/general
+            mount 192.168.56.200:/var/nfs/general /mnt/nfs/general
+        SHELL
+        debian_rke02.vm.provider 'virtualbox' do |vb|
+            vb.memory = 4096
+            vb.cpus = 4
+            vb.name = 'debian-rke02'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+        end
+    end
+    config.vm.define 'debian_rke03' do |debian_rke03|
+        debian_rke03.vm.box = 'debian/bookworm64'
+        debian_rke03.vm.hostname = 'debian-rke03'
+        debian_rke03.vm.network 'private_network', ip: ENV['DEBIAN_RKE03_IP']
+        debian_rke03.vm.provision 'shell', inline: 'timedatectl set-timezone $TZ', env: {"TZ" => ENV['TIMEZONE']}
+        debian_rke03.vm.provision 'shell', inline: 'echo "$IP debian-rke01" >> /etc/hosts', env: {"IP" => ENV['DEBIAN_RKE01_IP']}
+        debian_rke03.vm.provision 'shell', inline: 'echo "$IP debian-rke02" >> /etc/hosts', env: {"IP" => ENV['DEBIAN_RKE02_IP']}
+        debian_rke03.vm.provision 'shell', inline: 'echo "$IP debian-rke03" >> /etc/hosts', env: {"IP" => ENV['DEBIAN_RKE03_IP']}
+        debian_rke03.vm.provision 'shell', inline: 'echo "$IP ubuntu-nfs" >> /etc/hosts', env: {"IP" => ENV['UBUNTU_NFS_IP']}
+        debian_rke03.vm.provision 'shell', inline: 'echo "$IP" >> /usr/local/src/local_ip', env: {"IP" => ENV['DEBIAN_RKE03_IP']}
+        debian_rke03.vm.provision 'shell', inline: 'echo "$IP" >> /usr/local/src/master_ip', env: {"IP" => ENV['DEBIAN_RKE01_IP']}
+        debian_rke03.vm.provision 'shell', inline: 'echo "$REK_VER" >> /usr/local/src/rke2_version', env: {"REK_VER" => ENV['RKE2_VERSION']}
+        debian_rke03.vm.provision 'shell', inline: 'echo "$HELM_VER" >> /usr/local/src/helm_version', env: {"HELM_VER" => ENV['HELM_VERSION']}
+        debian_rke03.vm.provision 'shell', inline: $script_debian
+        debian_rke03.vm.provision 'shell', inline: <<-SHELL
+            swapoff -a && sed -i "/swap/d" /etc/fstab
+            sed -i '/127.0.1.1/d' /etc/hosts
+            echo 'net.ipv4.conf.all.forwarding=1' >> /etc/sysctl.conf
+            echo 'net.ipv6.conf.all.forwarding=1' >> /etc/sysctl.conf
+            sysctl -p
+            apt update
+            apt upgrade -y
+        SHELL
+        debian_rke03.vm.provision :reload
+        debian_rke03.vm.provision 'shell', inline: <<-SHELL
+            apt install -y ca-certificates curl gnupg lsb-release nfs-common golang htop iptables default-mysql-client-core git
+            export INSTALL_RKE2_VERSION=$(cat /usr/local/src/rke2_version)
+            export INSTALL_RKE2_ARTIFACT_PATH=/usr/local/src
+            export INSTALL_RKE2_TYPE=server
+            export RKE_IP=$(cat /usr/local/src/local_ip)
+            export MASTER_IP=$(cat /usr/local/src/master_ip)
+            export INSTALL_HELM_VERSION=$(cat /usr/local/src/helm_version)
+            export TOKEN=$(cat /vagrant/temp/token)
+            cd /usr/local/src/
+            curl -OL https://github.com/rancher/rke2/releases/download/$INSTALL_RKE2_VERSION/rke2-images.linux-amd64.tar.zst
+            curl -OL https://github.com/rancher/rke2/releases/download/$INSTALL_RKE2_VERSION/rke2.linux-amd64.tar.gz
+            curl -OL https://github.com/rancher/rke2/releases/download/$INSTALL_RKE2_VERSION/sha256sum-amd64.txt
+            curl -sfL https://get.rke2.io --output install.sh
+            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            wget https://get.helm.sh/helm-$INSTALL_HELM_VERSION-linux-amd64.tar.gz
+            CONTROLLER_TAG=$(curl -s https://api.github.com/repos/kubernetes/ingress-nginx/releases/latest | grep tag_name | cut -d '"' -f 4)
+            wget https://github.com/kubernetes/ingress-nginx/archive/refs/tags/${CONTROLLER_TAG}.tar.gz
+            chown root:root /usr/local/src/kubectl
+            chmod +x /usr/local/src/kubectl
+            cp /usr/local/src/kubectl /usr/local/bin/
+            tar -zxvf /usr/local/src/helm-$INSTALL_HELM_VERSION-linux-amd64.tar.gz -C /usr/local/src/
+            chown root:root /usr/local/src/linux-amd64/helm
+            chmod +x /usr/local/src/linux-amd64/helm
+            cp /usr/local/src/linux-amd64/helm /usr/local/bin/
+            echo 'export KUBECONFIG=/etc/rancher/rke2/rke2.yaml' >> /root/.bashrc
+            echo 'export PATH=$PATH:/var/lib/rancher/rke2/bin:/usr/local/bin' >> /root/.bashrc
+            echo 'export CRI_CONFIG_FILE=unix:///run/k3s/containerd/containerd.sock' >> /root/.bashrc
+            echo 'export CONTAINER_RUNTIME_ENDPOINT=/run/k3s/containerd/containerd.sock' >> /root/.bashrc
+            echo 'export CONTAINERD_ADDRESS=/var/lib/rancher/rke2/agent/etc/crictl.yaml' >> /root/.bashrc
+            source /root/.bashrc
+            mkdir /etc/rancher/rke2 -p
+            cp /vagrant/files/config.yaml /etc/rancher/rke2/
+            sed -i "s|%HOSTNAME%|$(hostname -f)|g" /etc/rancher/rke2/config.yaml
+            sed -i "s|%IP%|$RKE_IP|g" /etc/rancher/rke2/config.yaml
+            sed -i "s|#TOKEN|token: $TOKEN|g" /etc/rancher/rke2/config.yaml
+            sed -i "s|#MASTERIP|server: https://$MASTER_IP:9345|g" /etc/rancher/rke2/config.yaml
+            cd /usr/local/src && sh install.sh
+            systemctl enable rke2-server
+            systemctl start rke2-server
+            chmod go-r /etc/rancher/rke2/rke2.yaml
+            helm repo add stable https://charts.helm.sh/stable
+            helm repo add bitnami https://charts.bitnami.com/bitnami
+            helm repo update
+            mkdir -p /mnt/nfs/general
+            mount 192.168.56.200:/var/nfs/general /mnt/nfs/general
+        SHELL
+        debian_rke03.vm.provider 'virtualbox' do |vb|
+            vb.memory = 4096
+            vb.cpus = 4
+            vb.name = 'debian-rke03'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+        end
+    end
+    config.vm.define 'ubuntu_nfs' do |ubuntu_nfs|
+        ubuntu_nfs.vm.box = 'ubuntu/focal64'
+        ubuntu_nfs.vm.hostname = 'ubuntu-nfs'
+        ubuntu_nfs.vm.network 'private_network', ip: ENV['UBUNTU_NFS_IP']
+        ubuntu_nfs.vm.provision 'shell', inline: 'sudo timedatectl set-timezone $TZ', env: {"TZ" => ENV['TIMEZONE']}
+        ubuntu_nfs.vm.provision 'shell', inline: 'echo "$IP ubuntu-kubeadm" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_KUBEADM_IP']}
+        ubuntu_nfs.vm.provision 'shell', inline: 'echo "$IP ubuntu-worker01" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_WORKER01_IP']}
+        ubuntu_nfs.vm.provision 'shell', inline: 'echo "$IP ubuntu-worker02" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_WORKER02_IP']}
+        ubuntu_nfs.vm.provision 'shell', inline: 'echo "$IP ubuntu-worker03" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_WORKER03_IP']}
+        ubuntu_nfs.vm.provision 'shell', inline: 'echo "$IP ubuntu-nfs" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_NFS_IP']}
+        ubuntu_nfs.vm.provision 'shell', inline: <<-SHELL
+            sudo apt update
+            sudo apt install -y nfs-kernel-server
+            sudo mkdir /var/nfs/general -p
+            sudo chown nobody:nogroup /var/nfs/general
+            echo "/var/nfs/general 192.168.56.0/24(rw,sync,no_subtree_check)" | sudo tee >> /etc/exports
+            sudo exportfs -ar
+        SHELL
+        ubuntu_nfs.vm.provider 'virtualbox' do |vb|
+            vb.memory = 512
+            vb.cpus = 1
+            vb.name = 'ubuntu-nfs'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+        end
+    end
+    config.vm.define 'ubuntu_kubeadm' do |ubuntu_kubeadm|
+        ubuntu_kubeadm.vm.box = 'ubuntu/focal64'
+        ubuntu_kubeadm.vm.hostname = 'ubuntu-kubeadm'
+        ubuntu_kubeadm.vm.network 'private_network', ip: ENV['UBUNTU_KUBEADM_IP']
+        ubuntu_kubeadm.vm.provision 'shell', inline: 'sudo timedatectl set-timezone $TZ', env: {"TZ" => ENV['TIMEZONE']}
+        ubuntu_kubeadm.vm.provision 'shell', inline: 'echo "$IP ubuntu-kubeadm" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_KUBEADM_IP']}
+        ubuntu_kubeadm.vm.provision 'shell', inline: 'echo "$IP ubuntu-worker01" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_WORKER01_IP']}
+        ubuntu_kubeadm.vm.provision 'shell', inline: 'echo "$IP ubuntu-worker02" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_WORKER02_IP']}
+        ubuntu_kubeadm.vm.provision 'shell', inline: 'echo "$IP ubuntu-worker03" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_WORKER03_IP']}
+        ubuntu_kubeadm.vm.provision 'shell', inline: 'echo "$IP ubuntu-nfs" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_NFS_IP']}
+        ubuntu_kubeadm.vm.provision 'shell', inline: <<-SHELL
+            swapoff -a && sed -i "/swap/d" /etc/fstab
+            echo "overlay" | sudo tee >> /etc/modules-load.d/k8s.conf
+            echo "br_netfilter" | sudo tee >> /etc/modules-load.d/k8s.conf
+            sudo modprobe overlay
+            sudo modprobe br_netfilter
+            echo "net.bridge.bridge-nf-call-iptables  = 1" | sudo tee >> /etc/sysctl.d/k8s.conf
+            echo "net.bridge.bridge-nf-call-ip6tables = 1" | sudo tee >> /etc/sysctl.d/k8s.conf
+            echo "net.ipv4.ip_forward                 = 1" | sudo tee >> /etc/sysctl.d/k8s.conf
+            sudo sysctl --system
+            sudo apt update
+            curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+            echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+            echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+            sudo apt update
+            sudo apt install -y git bash-completion apt-transport-https kubelet kubeadm kubectl ca-certificates gnupg lsb-release containerd.io nfs-common
+            sudo apt-mark hold kubelet kubeadm kubectl
+            sudo containerd config default | sudo tee /etc/containerd/config.toml
+            sudo sed -i "s/SystemdCgroup = false/SystemdCgroup = true/g" /etc/containerd/config.toml
+            sudo systemctl restart containerd
+            sudo systemctl enable --now kubelet
+            kubectl completion bash | sudo tee /etc/bash_completion.d/kubectl > /dev/null
+            curl -sS https://webinstall.dev/k9s | sudo bash
+            echo "alias k=kubectl" >> $HOME/.bashrc
+            echo "source /etc/profile.d/bash_completion.sh" >> $HOME/.bashrc
+            echo "source $HOME/.config/envman/PATH.env" >> $HOME/.bashrc
+            source $HOME/.bashrc
+            curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 > /tmp/install-helm.sh
+            chmod u+x /tmp/install-helm.sh
+            sudo bash /tmp/install-helm.sh
+            sudo helm repo add stable https://charts.helm.sh/stable
+            sudo helm repo add bitnami https://charts.bitnami.com/bitnami
+            sudo helm repo update
+        SHELL
+        ubuntu_kubeadm.vm.provision 'shell', inline: 'sudo kubeadm init --pod-network-cidr=10.10.0.0/16 --apiserver-advertise-address=$IP', env: {"IP" => ENV['UBUNTU_KUBEADM_IP']}
+        ubuntu_kubeadm.vm.provision 'shell', inline: <<-SHELL
+            mkdir -p /vagrant/temp
+            rm -f /vagrant/temp/* && touch /vagrant/temp/token.sh && chmod +x /vagrant/temp/token.sh
+            kubeadm token create --print-join-command > /vagrant/temp/token.sh
+            sudo mkdir -p $HOME/.kube
+            sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+            sudo cp -i /etc/kubernetes/admin.conf /vagrant/temp/
+            sudo chown $(id -u):$(id -g) $HOME/.kube/config
+            git clone https://github.com/fabiokerber/Kubernetes.git
+            sudo mkdir -p /mnt/nfs/general
+            sudo mount 192.168.56.200:/var/nfs/general /mnt/nfs/general
+        SHELL
+        ubuntu_kubeadm.vm.provider 'virtualbox' do |vb|
+            vb.memory = 2048
+            vb.cpus = 2
+            vb.name = 'ubuntu-kubeadm'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+        end
+    end
+    config.vm.define 'ubuntu_worker01' do |ubuntu_worker01|
+        ubuntu_worker01.vm.box = 'ubuntu/focal64'
+        ubuntu_worker01.vm.hostname = 'ubuntu-worker01'
+        ubuntu_worker01.vm.network 'private_network', ip: ENV['UBUNTU_WORKER01_IP']
+        ubuntu_worker01.vm.provision 'shell', inline: 'sudo timedatectl set-timezone $TZ', env: {"TZ" => ENV['TIMEZONE']}
+        ubuntu_worker01.vm.provision 'shell', inline: 'echo "$IP ubuntu-kubeadm" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_KUBEADM_IP']}
+        ubuntu_worker01.vm.provision 'shell', inline: 'echo "$IP ubuntu-worker01" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_WORKER01_IP']}
+        ubuntu_worker01.vm.provision 'shell', inline: 'echo "$IP ubuntu-worker02" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_WORKER02_IP']}
+        ubuntu_worker01.vm.provision 'shell', inline: 'echo "$IP ubuntu-worker03" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_WORKER03_IP']}
+        ubuntu_worker01.vm.provision 'shell', inline: 'echo "$IP ubuntu-nfs" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_NFS_IP']}
+        ubuntu_worker01.vm.provision 'shell', inline: <<-SHELL
+            swapoff -a && sed -i "/swap/d" /etc/fstab
+            echo "overlay" | sudo tee >> /etc/modules-load.d/k8s.conf
+            echo "br_netfilter" | sudo tee >> /etc/modules-load.d/k8s.conf
+            sudo modprobe overlay
+            sudo modprobe br_netfilter
+            echo "net.bridge.bridge-nf-call-iptables  = 1" | sudo tee >> /etc/sysctl.d/k8s.conf
+            echo "net.bridge.bridge-nf-call-ip6tables = 1" | sudo tee >> /etc/sysctl.d/k8s.conf
+            echo "net.ipv4.ip_forward                 = 1" | sudo tee >> /etc/sysctl.d/k8s.conf
+            sudo sysctl --system
+            sudo apt update
+            curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+            echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+            echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+            sudo apt update
+            sudo apt install -y git bash-completion apt-transport-https kubelet kubeadm kubectl ca-certificates gnupg lsb-release containerd.io nfs-common
+            sudo apt-mark hold kubelet kubeadm kubectl
+            sudo containerd config default | sudo tee /etc/containerd/config.toml
+            sudo sed -i "s/SystemdCgroup = false/SystemdCgroup = true/g" /etc/containerd/config.toml
+            sudo systemctl restart containerd
+            sudo systemctl enable --now kubelet
+            sudo bash /vagrant/temp/token.sh
+            sudo mkdir -p $HOME/.kube
+            sudo cp -i /vagrant/temp/admin.conf $HOME/.kube/config
+            sudo chown $(id -u):$(id -g) $HOME/.kube/config
+            sudo mkdir -p /mnt/nfs/general
+            sudo mount 192.168.56.200:/var/nfs/general /mnt/nfs/general
+        SHELL
+        ubuntu_worker01.vm.provider 'virtualbox' do |vb|
+            vb.memory = 1024
+            vb.cpus = 2
+            vb.name = 'ubuntu-worker01'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+        end
+    end
+    config.vm.define 'ubuntu_worker02' do |ubuntu_worker02|
+        ubuntu_worker02.vm.box = 'ubuntu/focal64'
+        ubuntu_worker02.vm.hostname = 'ubuntu-worker02'
+        ubuntu_worker02.vm.network 'private_network', ip: ENV['UBUNTU_WORKER02_IP']
+        ubuntu_worker02.vm.provision 'shell', inline: 'sudo timedatectl set-timezone $TZ', env: {"TZ" => ENV['TIMEZONE']}
+        ubuntu_worker02.vm.provision 'shell', inline: 'echo "$IP ubuntu-kubeadm" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_KUBEADM_IP']}
+        ubuntu_worker02.vm.provision 'shell', inline: 'echo "$IP ubuntu-worker01" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_WORKER01_IP']}
+        ubuntu_worker02.vm.provision 'shell', inline: 'echo "$IP ubuntu-worker02" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_WORKER02_IP']}
+        ubuntu_worker02.vm.provision 'shell', inline: 'echo "$IP ubuntu-worker03" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_WORKER03_IP']}
+        ubuntu_worker02.vm.provision 'shell', inline: 'echo "$IP ubuntu-nfs" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_NFS_IP']}
+        ubuntu_worker02.vm.provision 'shell', inline: <<-SHELL
+            swapoff -a && sed -i "/swap/d" /etc/fstab
+            echo "overlay" | sudo tee >> /etc/modules-load.d/k8s.conf
+            echo "br_netfilter" | sudo tee >> /etc/modules-load.d/k8s.conf
+            sudo modprobe overlay
+            sudo modprobe br_netfilter
+            echo "net.bridge.bridge-nf-call-iptables  = 1" | sudo tee >> /etc/sysctl.d/k8s.conf
+            echo "net.bridge.bridge-nf-call-ip6tables = 1" | sudo tee >> /etc/sysctl.d/k8s.conf
+            echo "net.ipv4.ip_forward                 = 1" | sudo tee >> /etc/sysctl.d/k8s.conf
+            sudo sysctl --system
+            sudo apt update
+            curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+            echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+            echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+            sudo apt update
+            sudo apt install -y git bash-completion apt-transport-https kubelet kubeadm kubectl ca-certificates gnupg lsb-release containerd.io nfs-common
+            sudo apt-mark hold kubelet kubeadm kubectl
+            sudo containerd config default | sudo tee /etc/containerd/config.toml
+            sudo sed -i "s/SystemdCgroup = false/SystemdCgroup = true/g" /etc/containerd/config.toml
+            sudo systemctl restart containerd
+            sudo systemctl enable --now kubelet
+            sudo bash /vagrant/temp/token.sh
+            sudo mkdir -p $HOME/.kube
+            sudo cp -i /vagrant/temp/admin.conf $HOME/.kube/config
+            sudo chown $(id -u):$(id -g) $HOME/.kube/config
+            sudo mkdir -p /mnt/nfs/general
+            sudo mount 192.168.56.200:/var/nfs/general /mnt/nfs/general
+        SHELL
+        ubuntu_worker02.vm.provider 'virtualbox' do |vb|
+            vb.memory = 1024
+            vb.cpus = 2
+            vb.name = 'ubuntu-worker02'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+        end
+    end
+    config.vm.define 'ubuntu_worker03' do |ubuntu_worker03|
+        ubuntu_worker03.vm.box = 'ubuntu/focal64'
+        ubuntu_worker03.vm.hostname = 'ubuntu-worker03'
+        ubuntu_worker03.vm.network 'private_network', ip: ENV['UBUNTU_WORKER03_IP']
+        ubuntu_worker03.vm.provision 'shell', inline: 'sudo timedatectl set-timezone $TZ', env: {"TZ" => ENV['TIMEZONE']}
+        ubuntu_worker03.vm.provision 'shell', inline: 'echo "$IP ubuntu-kubeadm" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_KUBEADM_IP']}
+        ubuntu_worker03.vm.provision 'shell', inline: 'echo "$IP ubuntu-worker01" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_WORKER01_IP']}
+        ubuntu_worker03.vm.provision 'shell', inline: 'echo "$IP ubuntu-worker02" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_WORKER02_IP']}
+        ubuntu_worker03.vm.provision 'shell', inline: 'echo "$IP ubuntu-worker03" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_WORKER03_IP']}
+        ubuntu_worker03.vm.provision 'shell', inline: 'echo "$IP ubuntu-nfs" | sudo tee >> /etc/hosts', env: {"IP" => ENV['UBUNTU_NFS_IP']}
+        ubuntu_worker03.vm.provision 'shell', inline: <<-SHELL
+            swapoff -a && sed -i "/swap/d" /etc/fstab
+            echo "overlay" | sudo tee >> /etc/modules-load.d/k8s.conf
+            echo "br_netfilter" | sudo tee >> /etc/modules-load.d/k8s.conf
+            sudo modprobe overlay
+            sudo modprobe br_netfilter
+            echo "net.bridge.bridge-nf-call-iptables  = 1" | sudo tee >> /etc/sysctl.d/k8s.conf
+            echo "net.bridge.bridge-nf-call-ip6tables = 1" | sudo tee >> /etc/sysctl.d/k8s.conf
+            echo "net.ipv4.ip_forward                 = 1" | sudo tee >> /etc/sysctl.d/k8s.conf
+            sudo sysctl --system
+            sudo apt update
+            curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+            echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+            echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+            sudo apt update
+            sudo apt install -y git bash-completion apt-transport-https kubelet kubeadm kubectl ca-certificates gnupg lsb-release containerd.io nfs-common
+            sudo apt-mark hold kubelet kubeadm kubectl
+            sudo containerd config default | sudo tee /etc/containerd/config.toml
+            sudo sed -i "s/SystemdCgroup = false/SystemdCgroup = true/g" /etc/containerd/config.toml
+            sudo systemctl restart containerd
+            sudo systemctl enable --now kubelet
+            sudo bash /vagrant/temp/token.sh
+            sudo mkdir -p $HOME/.kube
+            sudo cp -i /vagrant/temp/admin.conf $HOME/.kube/config
+            sudo chown $(id -u):$(id -g) $HOME/.kube/config
+            sudo kubectl apply -f https://github.com/weaveworks/weave/releases/download/v2.8.1/weave-daemonset-k8s.yaml
+            sudo kubectl apply -f /vagrant/files/kube-state-metrics.yaml
+            sudo mkdir -p /mnt/nfs/general
+            sudo mount 192.168.56.200:/var/nfs/general /mnt/nfs/general
+            kubectl label node ubuntu-worker01 node-role.kubernetes.io/worker=worker
+            kubectl label node ubuntu-worker02 node-role.kubernetes.io/worker=worker
+            kubectl label node ubuntu-worker03 node-role.kubernetes.io/worker=worker
+        SHELL
+        ubuntu_worker03.vm.provider 'virtualbox' do |vb|
+            vb.memory = 1024
+            vb.cpus = 2
+            vb.name = 'ubuntu-worker03'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+        end
+    end
+        config.vm.define 'alpine_kind' do |alpine_kind|
+        alpine_kind.vm.box = 'generic/alpine317'
+        alpine_kind.vm.hostname = 'kind-alpine'
+        alpine_kind.vm.network 'private_network', ip: ENV['ALPINE_KIND_IP']
+        alpine_kind.vm.provision 'shell', inline: '[ $(uname -m) = x86_64 ] && curl -Lo ./kind https://kind.sigs.k8s.io/dl/$KV/kind-linux-amd64', env: {"KV" => ENV['KIND_VERSION']}
+        alpine_kind.vm.provision 'shell', inline: <<-SHELL
+            sudo mv /etc/apk/repositories /etc/apk/repositories.bkp
+            sudo wget -O /etc/apk/repositories https://raw.githubusercontent.com/fabiokerber/Kubernetes/main/7.Descomplicando_Kubernetes/lab/files/repositories
+            sudo apk update && sudo apk upgrade
+            sudo apk add --no-cache docker docker-compose openrc shadow virtualbox-guest-additions iptables curl wget traceroute bash bash-doc htop bind-tools git coreutils util-linux iproute2 shadow kubectl-bash-completion tzdata bash-completion
+            sudo rc-update add docker boot
+            sudo rc-service docker start
+            wget -O /tmp/mount.sh https://raw.githubusercontent.com/fabiokerber/Kubernetes/main/7.Descomplicando_Kubernetes/lab/files/mount.sh
+            chmod +x /tmp/mount.sh && sudo bash /tmp/mount.sh
+            sudo rc-update add local default
+        SHELL
+        alpine_kind.vm.provision :reload
+        alpine_kind.vm.provision 'shell', inline: <<-SHELL
+            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            sudo chown root:root kubectl && sudo chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+            curl -sS https://webinstall.dev/k9s | sudo bash
+            echo "source /etc/bash/bash_completion.sh" | sudo tee -a /root/.bashrc
+            echo "source $HOME/.config/envman/PATH.env" | sudo tee -a /root/.bashrc
+            sudo chown root:root kind && sudo chmod +x kind && sudo mv kind /usr/local/bin/
+            sudo wget -O /root/cluster.yaml https://raw.githubusercontent.com/fabiokerber/Kubernetes/main/7.Descomplicando_Kubernetes/lab/files/cluster.yaml
+            sudo kind create cluster --config /root/cluster.yaml
+            sudo mkdir -p /root/k8s
+            sudo git clone https://github.com/fabiokerber/Kubernetes.git /root/k8s
+            sudo kubectl label node kind-worker node-role.kubernetes.io/worker=worker
+            sudo kubectl label node kind-worker2 node-role.kubernetes.io/worker=worker
+            curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 > /tmp/install-helm.sh
+            chmod u+x /tmp/install-helm.sh
+            sudo bash /tmp/install-helm.sh
+            sudo helm repo add bitnami https://charts.bitnami.com/bitnami && sudo helm repo add stable https://charts.helm.sh/stable
+            sudo helm repo update
+        SHELL
+        alpine_kind.vm.provider 'virtualbox' do |vb|
+            vb.memory = 4096
+            vb.cpus = 4
+            vb.name = 'kind-alpine'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+        end
+    end
+end

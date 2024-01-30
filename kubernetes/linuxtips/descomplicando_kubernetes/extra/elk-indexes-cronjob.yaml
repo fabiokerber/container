@@ -1,0 +1,56 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: elk-indexes-cronjob
+  namespace: cronjob-operacoes
+spec:
+  schedule: "*/30 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: task-elk-index-usage
+            image: alpine
+            env:
+            - name: ELK_USER
+              valueFrom:
+                secretKeyRef:
+                  name: elk-indexes-secret
+                  key: username
+            - name: ELK_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: elk-indexes-secret
+                  key: password
+            - name: ELK_HOST
+              value: https://es-logs.bk.sapo.pt
+            - name: ELK_INDEX
+              value: test-logs
+            resources:
+              requests:
+                cpu: 0.5
+                memory: 64Mi
+              limits: 
+                cpu: 0.7
+                memory: 96Mi
+            command:
+              - "/bin/sh"
+              - "-c"
+              - |
+                apk update && apk add curl
+                /script/elk_index_usage.sh
+            volumeMounts:
+            - name: script
+              mountPath: /script
+            - name: tz-config
+              mountPath: /etc/localtime
+          volumes:
+          - name: script
+            configMap:
+              name: elk-indexes-configmap
+              defaultMode: 0500
+          - name: tz-config
+            hostPath:
+              path: /usr/share/zoneinfo/Europe/Lisbon

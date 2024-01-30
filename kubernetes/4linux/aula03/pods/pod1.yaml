@@ -1,0 +1,15 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    run: pod1
+  name: pod1
+  namespace: default
+spec:
+  containers:
+  - args:
+    - /bin/sleep
+    - "999999"
+    image: alpine
+    name: pod1

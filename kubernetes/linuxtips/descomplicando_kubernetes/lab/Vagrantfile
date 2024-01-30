@@ -1,0 +1,47 @@
+Vagrant.configure('2') do |config|
+    config.env.enable
+    config.vm.boot_timeout = 1200
+    if Vagrant.has_plugin?("vagrant-vbguest")
+        config.vbguest.auto_update = false
+    end
+    config.vm.define 'ubuntu_kind' do |ubuntu_kind|
+        ubuntu_kind.vm.box = 'ubuntu/lunar64'
+        ubuntu_kind.vm.hostname = 'kind-ubuntu.fks.lab'
+        ubuntu_kind.vm.network 'private_network', ip: ENV['UBUNTU_KIND_IP']
+        ubuntu_kind.vm.provision 'shell', inline: 'sudo timedatectl set-timezone $TZ', env: {"TZ" => ENV['TIMEZONE']}
+        ubuntu_kind.vm.provision 'shell', inline: 'echo "$VERSION" >> /tmp/elk_version', env: {"VERSION" => ENV['ELK_VERSION']}
+        ubuntu_kind.vm.provision 'shell', inline: '[ $(uname -m) = x86_64 ] && curl -Lo ./kind https://kind.sigs.k8s.io/dl/$KV/kind-linux-amd64', env: {"KV" => ENV['KIND_VERSION']}
+        ubuntu_kind.vm.provision 'shell', inline: <<-SHELL
+            apt update
+            apt install -y git bash-completion
+            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+            kubectl completion bash | sudo tee /etc/bash_completion.d/kubectl > /dev/null
+            curl -sS https://webinstall.dev/k9s | sudo bash
+            echo "alias k=kubectl" >> $HOME/.bashrc
+            echo "source /etc/profile.d/bash_completion.sh" >> $HOME/.bashrc
+            echo "source $HOME/.config/envman/PATH.env" >> $HOME/.bashrc
+            source $HOME/.bashrc
+            curl -fsSL https://get.docker.com | sudo bash
+            chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+            kind create cluster --config /vagrant/files/cluster.yaml
+            kubectl label node kind-worker node-role.kubernetes.io/worker=worker
+            kubectl label node kind-worker2 node-role.kubernetes.io/worker=worker
+            kubectl label node kind-worker3 node-role.kubernetes.io/worker=worker
+            curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 > /tmp/install-helm.sh
+            chmod u+x /tmp/install-helm.sh
+            bash /tmp/install-helm.sh
+            git clone https://github.com/ahmetb/kubectx /opt/kubectx
+            ln -s /opt/kubectx/kubectx /usr/local/bin/kubectx
+            ln -s /opt/kubectx/kubens /usr/local/bin/kubens
+            kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+            git clone https://github.com/fabiokerber/Kubernetes.git /home/vagrant/Kubernetes
+        SHELL
+        ubuntu_kind.vm.provider 'virtualbox' do |vb|
+            vb.memory = 12288
+            vb.cpus = 6
+            vb.name = 'kind-ubuntu'
+            vb.customize ['modifyvm', :id, '--nicpromisc2', 'allow-all']
+        end
+    end
+end

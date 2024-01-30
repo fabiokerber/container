@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+#metadata deployment
+metadata:
+  labels:
+    app: nginx-deployment
+  name: nginx-deployment
+#specs deployment
+spec:
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: nginx-deployment
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 2
+#specs initcontainers & containers
+  template:
+    metadata:
+      labels:
+        app: nginx-deployment
+    spec:
+#initcontainers criam dois arquivos
+      initContainers:
+      - image: busybox
+        name: busybox-giropops
+        command: ["/bin/ash"]
+        args: ["-c", "echo 'VAIIIIIII' > /usr/share/nginx/html/giropops.html"]
+        resources:
+          requests:
+            cpu: "0.3"
+            memory: "64Mi"
+          limits: 
+            cpu: "0.5"
+            memory: "128Mi"
+        volumeMounts:
+        - name: nginx-html
+          mountPath: /usr/share/nginx/html
+      - image: busybox
+        name: busybox-index
+        command: ["/bin/ash"]
+        args: ["-c", "echo 'VAIIIIIII' > /usr/share/nginx/html/index.html"]
+        resources:
+          requests:
+            cpu: "0.3"
+            memory: "64Mi"
+          limits: 
+            cpu: "0.5"
+            memory: "128Mi"
+#mount do volume no container
+        volumeMounts:
+        - name: nginx-html
+          mountPath: /usr/share/nginx/html
+      containers:
+      - image: nginx:1.25.1
+        name: nginx
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            cpu: "0.3"
+            memory: "64Mi"
+          limits:
+            cpu: "0.5"
+            memory: "256Mi"
+#mount do volume no container
+        volumeMounts:
+        - name: nginx-html
+          mountPath: /usr/share/nginx/html
+#porta 80 deve estar up ao iniciar o container
+        startupProbe:
+          tcpSocket:
+            port: 80
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+#livenessprobe para checar o index.html e giropops.html
+        livenessProbe:
+          exec:
+            command:
+            - curl
+            - -f
+            - http://localhost/index.html
+            - curl
+            - -f
+            - http://localhost/giropops.html
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+#volume claim > meu-pvc
+      volumes:
+      - name: nginx-html
+        persistentVolumeClaim:
+          claimName: meu-pvc

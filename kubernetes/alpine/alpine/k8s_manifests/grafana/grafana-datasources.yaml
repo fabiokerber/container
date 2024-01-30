@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasource-conf
+  labels:
+    name: grafana-datasource-conf
+  namespace: monitoring
+data:
+  datasources.yaml: |-
+    apiVersion: 1
+    deleteDatasources:
+      - name: Prometheus
+        orgId: 1
+    datasources:
+    - name: DS_Prometheus
+      type: prometheus
+      access: proxy
+      orgId: 1
+      url: http://192.168.56.151:30000
+      version: 1
+      editable: true

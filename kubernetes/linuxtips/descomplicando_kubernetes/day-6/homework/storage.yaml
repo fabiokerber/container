@@ -1,0 +1,40 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: meu-storage
+provisioner: kubernetes.io/no-provisioner
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  labels:
+    pool: nfs
+  name: meu-pv-nfs
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  nfs:
+    server: 192.168.56.200
+    path: /var/nfs/general
+  storageClassName: meu-storage
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: meu-pvc
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: meu-storage
+#match com a config do meu-pv-nfs "pool: nfs" que pertence ao storageclass "meu-storage"
+  selector:
+    matchLabels:
+      pool: nfs

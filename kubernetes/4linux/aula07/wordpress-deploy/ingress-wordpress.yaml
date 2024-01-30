@@ -1,0 +1,14 @@
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: ingress-wordpress
+  namespace: projeto
+spec:
+  rules:
+  - host: wordpress.dexter.com.br
+    http:
+      paths:
+      - backend:
+          serviceName: wordpress
+          servicePort: 80

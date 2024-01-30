@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: elk-indexes-configmap
+  namespace: cronjob-operacoes
+data:
+  elk_index_usage.sh: |
+    #!/bin/sh
+
+    NOW=$(date -u +%FT$(nmeter -d0 '%3t' | head -n1)Z)
+    RM_FL='rm -f /tmp/totalbytes'
+
+    ######## TOTAL_ALL #########
+    eval "$RM_FL"
+    curl -s -u "$ELK_USER:$ELK_PASS" -H "Content-Type: application/json" -X GET "$ELK_HOST/_cat/indices/filebeat-*?h=index,store.size&bytes=b&v" | awk '(NR>1)' >> /tmp/totalbytes
+    curl -s -u "$ELK_USER:$ELK_PASS" -H "Content-Type: application/json" -X GET "$ELK_HOST/_cat/indices/source-*?h=index,store.size&bytes=b&v" | awk '(NR>1)' >> /tmp/totalbytes
+    curl -s -u "$ELK_USER:$ELK_PASS" -H "Content-Type: application/json" -X GET "$ELK_HOST/_cat/indices/globallogger-*?h=index,store.size&bytes=b&v" | awk '(NR>1)' >> /tmp/totalbytes
+    TOTAL_ALL=`(cat /tmp/totalbytes | awk '{sum+=$2} END{print sum}' | awk '{print $1/1024/1024/1024}' | awk '{$1=int($1)}1')` 
+    ############################
+
+    ##### TOTAL_CONTEUDOS #####
+    eval "$RM_FL"
+    curl -s -u "$ELK_USER:$ELK_PASS" -H "Content-Type: application/json" -X GET "$ELK_HOST/_cat/indices/filebeat-k8s-sapo-conteudos-*?h=index,store.size&bytes=b&v" | awk '(NR>1)' >> /tmp/totalbytes
+    TOTAL_CONTEUDOS=`(cat /tmp/totalbytes | awk '{sum+=$2} END{print sum}' | awk '{print $1/1024/1024/1024}' | awk '{$1=int($1)}1')`
+    ############################
+
+    ##### TOTAL_OPERACOES ######
+    eval "$RM_FL"
+    curl -s -u "$ELK_USER:$ELK_PASS" -H "Content-Type: application/json" -X GET "$ELK_HOST/_cat/indices/filebeat-k8s-sapo-operacoes-*?h=index,store.size&bytes=b&v" | awk '(NR>1)' >> /tmp/totalbytes
+    curl -s -u "$ELK_USER:$ELK_PASS" -H "Content-Type: application/json" -X GET "$ELK_HOST/_cat/indices/filebeat-7.16.1-ops-rancher-*?h=index,store.size&bytes=b&v" | awk '(NR>1)' >> /tmp/totalbytes
+    curl -s -u "$ELK_USER:$ELK_PASS" -H "Content-Type: application/json" -X GET "$ELK_HOST/_cat/indices/filebeat-k8s-ingress-nginx-*?h=index,store.size&bytes=b&v" | awk '(NR>1)' >> /tmp/totalbytes
+    TOTAL_OPERACOES=`(cat /tmp/totalbytes | awk '{sum+=$2} END{print sum}' | awk '{print $1/1024/1024/1024}' | awk '{$1=int($1)}1')`
+    ############################
+
+    ###### TOTAL_PARCEIROS ######
+    eval "$RM_FL"
+    curl -s -u "$ELK_USER:$ELK_PASS" -H "Content-Type: application/json" -X GET "$ELK_HOST/_cat/indices/globallogger-k8s-sapo-adserver-*?h=index,store.size&bytes=b&v" | awk '(NR>1)' >> /tmp/totalbytes
+    curl -s -u "$ELK_USER:$ELK_PASS" -H "Content-Type: application/json" -X GET "$ELK_HOST/_cat/indices/globallogger-k8s-sapo-splashprize-*?h=index,store.size&bytes=b&v" | awk '(NR>1)' >> /tmp/totalbytes
+    TOTAL_PARCEIROS=`(cat /tmp/totalbytes | awk '{sum+=$2} END{print sum}' | awk '{print $1/1024/1024/1024}' | awk '{$1=int($1)}1')`
+    ############################
+
+    ### TOTAL_TRANSACIONAIS ####
+    eval "$RM_FL"
+    curl -s -u "$ELK_USER:$ELK_PASS" -H "Content-Type: application/json" -X GET "$ELK_HOST/_cat/indices/filebeat-k8s-auto-sapo-*?h=index,store.size&bytes=b&v" | awk '(NR>1)' >> /tmp/totalbytes
+    curl -s -u "$ELK_USER:$ELK_PASS" -H "Content-Type: application/json" -X GET "$ELK_HOST/_cat/indices/filebeat-k8s-sapo-emprego-*?h=index,store.size&bytes=b&v" | awk '(NR>1)' >> /tmp/totalbytes
+    curl -s -u "$ELK_USER:$ELK_PASS" -H "Content-Type: application/json" -X GET "$ELK_HOST/_cat/indices/globallogger-k8s-sapo-emprego-*?h=index,store.size&bytes=b&v" | awk '(NR>1)' >> /tmp/totalbytes
+    TOTAL_TRANSACIONAIS=`(cat /tmp/totalbytes | awk '{sum+=$2} END{print sum}' | awk '{print $1/1024/1024/1024}' | awk '{$1=int($1)}1')`
+    ############################
+
+    ####### TOTAL_LOGIN ########
+    eval "$RM_FL"
+    curl -s -u "$ELK_USER:$ELK_PASS" -H "Content-Type: application/json" -X GET "$ELK_HOST/_cat/indices/source-backend-sapo-login-*?h=index,store.size&bytes=b&v" | awk '(NR>1)' >> /tmp/totalbytes
+    TOTAL_LOGIN=`(cat /tmp/totalbytes | awk '{sum+=$2} END{print sum}' | awk '{print $1/1024/1024/1024}' | awk '{$1=int($1)}1')`
+    ############################
+
+    ####### SEND 2 ELK ########
+    curl -s -u "$ELK_USER:$ELK_PASS" -H "Content-Type: application/json" -X POST "$ELK_HOST/$ELK_INDEX/_doc" -d '{"@timestamp": "'"${NOW}"'","total_all": '"${TOTAL_ALL}"',"total_conteudos": '"${TOTAL_CONTEUDOS}"',"total_operacoes": '"${TOTAL_OPERACOES}"',"total_parceiros": '"${TOTAL_PARCEIROS}"',"total_transacionais": '"${TOTAL_TRANSACIONAIS}"',"total_login": '"${TOTAL_LOGIN}"'}'
+    ############################

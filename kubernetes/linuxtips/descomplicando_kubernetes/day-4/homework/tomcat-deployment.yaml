@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: java
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: tomcat-deployment
+  name:  tomcat-deployment
+  namespace: java
+spec:
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: tomcat-deployment
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: tomcat-deployment
+    spec:
+      containers:
+      - image: gcr.io/kodekloud/centos-ssh-enabled:tomcat
+        name: tomcat
+        ports:
+          - containerPort: 8080
+            hostPort: 8080
+        resources:
+          requests:
+            cpu: "0.3"
+            memory: "64Mi"
+          limits:
+            cpu: "0.5"
+            memory: "128Mi"
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always

@@ -1,0 +1,34 @@
+---
+kind: Deployment
+apiVersion: extensions/v1beta1
+metadata:
+  name: nginx-deploy
+spec:
+  replicas: 5
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 80
+            preference:
+              matchExpressions:
+              - key: cloud
+                operator: In
+                values: 
+                - AWS
+          - weight: 20
+            preference:
+              matchExpressions:
+              - key: cloud
+                operator: In
+                values: 
+                - AZURE
+      containers:
+      - name: nginx-deploy
+        image: nginx
+        ports:
+        - containerPort: 80

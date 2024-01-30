@@ -1,0 +1,15 @@
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: dexter-limits2
+  namespace: dexter-limits
+spec:
+  limits:
+  - max:
+      memory: 512Mi
+      cpu: 0.8
+    min:
+      memory: 256Mi
+      cpu: 0.3
+    type: Container

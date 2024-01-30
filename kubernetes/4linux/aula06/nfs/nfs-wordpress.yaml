@@ -1,0 +1,14 @@
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: wordpress-data
+spec:
+  capacity:
+    storage: 50Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Recycle
+  nfs:
+    server: 200.100.50.200
+    path: /home/suporte/wordpress-data

@@ -1,0 +1,10 @@
+tls-san:
+  - %HOSTNAME%
+  - %IP%
+node-ip: %IP%
+node-label:
+  - "node=master"
+write-kubeconfig-mode: "0644"
+debug: false
+#TOKEN
+#MASTERIP

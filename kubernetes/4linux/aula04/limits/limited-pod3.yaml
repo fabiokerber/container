@@ -1,0 +1,16 @@
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: limited-pod3
+  namespace: dexter-limits
+spec:
+  containers:
+  - name: limited-pod3
+    image: nginx
+    resources:
+      requests:
+        memory: "0.2Gi"
+        cpu: 0.2
+  nodeSelector:
+    cloud: AWS

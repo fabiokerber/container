@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: webserver
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: nginx-deployment
+  name:  nginx-deployment
+  namespace: webserver
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: nginx-deployment
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 2
+  template:
+    metadata:
+      labels:
+        app: nginx-deployment
+    spec:
+      initContainers:
+      - image: busybox
+        name: busybox
+        command: ["/bin/ash"]
+        args: ["-c", "echo 'VAIIIIIII' >> /mnt/data/giropops.html"]
+        resources:
+          requests:
+            cpu: "0.3"
+            memory: "64Mi"
+          limits: 
+            cpu: "0.5"
+            memory: "128Mi"
+        volumeMounts:
+        - mountPath: /mnt/data
+          name: emptydir
+      containers:
+      - image: nginx
+        name: nginx
+        ports:
+          - containerPort: 80
+            hostPort: 80
+        resources:
+          requests:
+            cpu: "0.3"
+            memory: "64Mi"
+          limits:
+            cpu: "0.5"
+            memory: "128Mi"
+        volumeMounts:
+        - mountPath: /usr/share/nginx/html
+          name: emptydir
+        startupProbe:
+          tcpSocket:
+            port: 80
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+        livenessProbe:
+          exec:
+            command:
+            - curl
+            - -f
+            - http://localhost/giropops.html
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+      volumes:
+      - name: emptydir
+        emptyDir:
+          sizeLimit: "256Mi"
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always

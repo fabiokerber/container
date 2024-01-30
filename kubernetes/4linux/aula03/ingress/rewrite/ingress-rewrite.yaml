@@ -1,0 +1,20 @@
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: ingress-rewrite
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: nginx.dexter.com.br
+    http:
+      paths:
+      - path: /matriz
+        backend:
+          serviceName: nginx-service1
+          servicePort: 80
+      - path: /filial
+        backend:
+          serviceName: nginx-service2
+          servicePort: 80

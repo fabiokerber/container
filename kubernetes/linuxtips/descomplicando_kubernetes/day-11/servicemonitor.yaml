@@ -1,0 +1,13 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: meuservicemonitor
+  labels:
+    app: nginx
+spec:
+  selector:
+    matchLabels:
+      app: nginx
+    endpoints:
+    - port: http
+      interval: 30s
